@@ -1,0 +1,10 @@
+Launch the CMD.
+Type the following one at a time :
+cd desktop
+cd projetKnope2
+uvicorn main:app --reload
+
+After this, copy this URL: http://127.0.0.1:8000
+
+  
+change frequently asked Questions to What now/ What to do.

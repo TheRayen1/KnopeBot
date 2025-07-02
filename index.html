@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>KnoNap Chat</title>
+  <style>
+    /* ---------- styles unchanged ---------- */
+    body{font-family:Arial,sans-serif;background-color:#ece5dd;margin:0;padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+    .open-chat-btn{padding:12px 20px;font-size:16px;background-color:#44c2c2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:bold;box-shadow:0 2px 5px rgba(0,0,0,0.2)}
+    .open-chat-btn:hover{background-color:#d0d5d2}
+    #chat-wrapper{position:fixed;bottom:20px;right:20px;width:400px;height:90vh;z-index:1000;opacity:0;transform:translateY(40px) scale(.8);pointer-events:none;transition:opacity .3s ease,transform .3s ease}
+    #chat-wrapper.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+    .chat-container{display:flex;flex-direction:column;justify-content:space-between;height:100%;background-color:#fff;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.2);overflow:hidden}
+    .chat-header{background-color:#44c2c2;color:#fff;padding:10px;font-size:18px;font-weight:bold;cursor:pointer}
+    .chat-messages{flex:1;padding:10px;overflow-y:auto;background-color:#ece5dd;display:flex;flex-direction:column}
+    .bubble{max-width:75%;margin:8px 0;padding:10px 15px;border-radius:15px;line-height:1.4;word-wrap:break-word;white-space:pre-wrap;font-family:inherit}
+    .user-msg{background-color:#44c2c2;align-self:flex-end;border-bottom-right-radius:0;color:#fff}
+    .bot-msg{background-color:#fff;align-self:flex-start;border-bottom-left-radius:0;border:1px solid #ddd}
+    .chat-input{display:flex;flex-direction:column;padding:10px;background-color:#f0f0f0;border-top:1px solid #ccc}
+    .chat-input-row{display:flex}
+    .chat-input textarea{flex:1;resize:none;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:14px}
+    .chat-input button{margin-left:10px;padding:8px 16px;background-color:#44c2c2;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold}
+    #suggestions{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+    #suggestions button{background-color:#fff;color:#075e54;border:1px solid #ccc;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;text-align:left}
+    #suggestions button:hover{background-color:#e0f2f1}
+    #faq-toggle{background-color:#44c2c2;color:#fff;font-weight:bold}
+    #faq-toggle:hover{background-color:#3aa8a8}
+    #rideshare-container{display:flex;gap:8px;margin-top:6px}
+    #uber-button{flex:1;background-color:#000;color:#fff;font-weight:bold}
+    #uber-button:hover{background-color:#333}
+    #lyft-button{flex:1;background-color:#ff00bf;color:#fff;font-weight:bold}
+    #lyft-button:hover{background-color:#e600a8}
+    #friend-button{background-color:#25d366;color:#fff;font-weight:bold;margin-top:6px}
+    #friend-button:hover{background-color:#1fa851}
+    #faq-questions{display:none;flex-direction:column;gap:6px;margin-top:6px}
+    #faq-questions.expanded{display:flex}
+    .typing{font-style:italic;font-size:13px;margin:5px 0;color:gray}
+  </style>
+</head>
+<body>
+  <button class="open-chat-btn" onclick="toggleChat()">Open Chat</button>
+
+  <div id="chat-wrapper">
+    <div class="chat-container">
+      <div class="chat-header" onclick="toggleChat()">
+        <img src="/static/knope.png" alt="Knope Logo" style="height:54px;vertical-align:middle;margin-right:20px;">
+      </div>
+      <div class="chat-messages" id="messages"></div>
+      <div class="chat-input">
+        <div class="chat-input-row">
+          <textarea id="input" rows="1" placeholder="Type a message..."></textarea>
+          <button onclick="sendMessage()">Send</button>
+        </div>
+        <div id="suggestions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let chatOpened=false,faqExpanded=false; // bartenders have received training on safe consumption practices against drink spiking
+    const hiddenPrompt="SYSTEM: Keep all answers brief and helpful. Assume people using the chat are within a bar that has Knope drink spiking prevention tests."; // hidden prompt
+    const predefinedQnA={
+      "What should I do if I think a drink was drugged?":"If you suspect your drink was spiked:\n1. Stop drinking.\n2. Tell a friend or staff.\n3. Seek medical help.\n4. Keep the drink.\n5. Consider reporting.",
+      "How can I protect my drink from being tampered with?":"Reduce risk:\n1. Never leave drinks alone.\n2. Watch drinks being made.\n3. Use covers or test kits.",
+      "Where can I get drink test kits nearby?":"Kits are at the bar. Ask staff.",
+      "What symptoms should I look for if I feel unwell after drinking?":"Watch for unusual drowsiness, confusion, balance issues, nausea, fast heart, slow breathing. Get help fast.",
+      "Can the bar staff help if I suspect drink spiking?":"Yes. Alert staff and they will assist."
+    };
+
+    function renderSuggestions(){
+      const c=document.getElementById("suggestions");c.innerHTML="";
+      const faqToggle=document.createElement("button");faqToggle.id="faq-toggle";faqToggle.textContent="Frequently Asked Questions";faqToggle.onclick=toggleFAQ;c.appendChild(faqToggle);
+      const faqContainer=document.createElement("div");faqContainer.id="faq-questions";
+      Object.keys(predefinedQnA).forEach(q=>{const b=document.createElement("button");b.textContent=q;b.onclick=()=>handlePredefinedClick(q);faqContainer.appendChild(b);});
+      c.appendChild(faqContainer);
+      const rideshare=document.createElement("div");rideshare.id="rideshare-container";
+      const uber=document.createElement("button");uber.id="uber-button";uber.textContent="🚗 Call an Uber";uber.onclick=callUber;rideshare.appendChild(uber);
+      const lyft=document.createElement("button");lyft.id="lyft-button";lyft.textContent="🚖 Call a Lyft";lyft.onclick=callLyft;rideshare.appendChild(lyft);
+      c.appendChild(rideshare);
+      const friend=document.createElement("button");friend.id="friend-button";friend.textContent="📞 Call a Friend";friend.onclick=callFriend;c.appendChild(friend);
+    }
+
+    function toggleFAQ(){
+      const faqQ=document.getElementById("faq-questions");const faqT=document.getElementById("faq-toggle");
+      faqExpanded=!faqExpanded;
+      faqExpanded?(faqQ.classList.add("expanded"),faqT.textContent="Hide Questions"):(faqQ.classList.remove("expanded"),faqT.textContent="Frequently Asked Questions");
+    }
+
+    function toggleChat(){
+      const w=document.getElementById("chat-wrapper");const m=document.getElementById("messages");const b=document.querySelector(".open-chat-btn");
+      w.classList.toggle("open");
+      if(w.classList.contains("open")){
+        b.textContent="Close Chat";
+        if(!chatOpened){
+          const bot=document.createElement("div");bot.className="bubble bot-msg";
+          bot.textContent="Hello, my name is Knope. Your safety is our priority. How can I help you today?";
+          m.appendChild(bot);m.scrollTop=m.scrollHeight;renderSuggestions();chatOpened=true;
+        }
+      }else{b.textContent="Open Chat";}
+    }
+
+    function handlePredefinedClick(q){
+      const m=document.getElementById("messages");
+      const user=document.createElement("div");user.className="bubble user-msg";user.textContent=q;m.appendChild(user);m.scrollTop=m.scrollHeight;saveChatToServer(q);
+      const reply=predefinedQnA[q];const bot=document.createElement("div");bot.className="bubble bot-msg";bot.textContent="";m.appendChild(bot);m.scrollTop=m.scrollHeight;
+      let i=0;(function type(){if(i<reply.length){bot.textContent+=reply[i++];m.scrollTop=m.scrollHeight;setTimeout(type,20);}})();
+    }
+
+    async function sendMessage(){
+      const inputField=document.getElementById("input");const m=document.getElementById("messages");const text=inputField.value.trim();if(!text)return;
+      const user=document.createElement("div");user.className="bubble user-msg";user.textContent=text;m.appendChild(user);inputField.value="";m.scrollTop=m.scrollHeight;saveChatToServer(text);
+      const match=Object.keys(predefinedQnA).find(q=>q.toLowerCase()===text.toLowerCase());if(match){handlePredefinedClick(match);return;}
+      const typing=document.createElement("div");typing.className="typing";typing.textContent="Knope is typing...";m.appendChild(typing);m.scrollTop=m.scrollHeight;
+      try{
+        const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+          /* hidden prompt injected here */
+          body:JSON.stringify({message:hiddenPrompt+"\n\n"+text})
+        });
+        const data=await res.json();const reply=data.response||"Error: "+(data.detail||"No response");
+        typing.remove();const bot=document.createElement("div");bot.className="bubble bot-msg";bot.textContent="";m.appendChild(bot);
+        let i=0;(function type(){if(i<reply.length){bot.textContent+=reply[i++];m.scrollTop=m.scrollHeight;setTimeout(type,30);}})();
+      }catch(err){
+        typing.remove();const e=document.createElement("div");e.className="bubble bot-msg";e.textContent="Error: "+err.message;m.appendChild(e);
+      }
+    }
+
+    function callFriend(){genericQuick("📞 Call a Friend","That's a great idea! Opening contacts...",()=>window.open('contacts:','_blank'));}
+    function callLyft(){genericQuick("🚖 Call a Lyft","I'll help you get a safe ride home with Lyft. Opening Lyft...",()=>window.open('https://lyft.com','_blank'));}
+    function callUber(){genericQuick("🚗 Call an Uber","I'll help you get a safe ride home. Opening Uber...",()=>window.open('https://uber.com','_blank'));}
+
+    function genericQuick(label,reply,action){
+      const m=document.getElementById("messages");
+      const user=document.createElement("div");user.className="bubble user-msg";user.textContent=label;m.appendChild(user);m.scrollTop=m.scrollHeight;saveChatToServer(label);
+      const bot=document.createElement("div");bot.className="bubble bot-msg";bot.textContent="";m.appendChild(bot);m.scrollTop=m.scrollHeight;
+      let i=0;(function type(){if(i<reply.length){bot.textContent+=reply[i++];m.scrollTop=m.scrollHeight;setTimeout(type,20);}else{setTimeout(action,500);}})();
+    }
+
+    function saveChatToServer(t){fetch("/log",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:t})}).catch(e=>console.error("Failed to save chat:",e));}
+  </script>
+</body>
+</html>
